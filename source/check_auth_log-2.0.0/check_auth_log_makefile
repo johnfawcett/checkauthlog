@@ -1,0 +1,10 @@
+DBTYPE=hash
+DBEXT=db
+
+smtp_auth_access: /etc/postfix/smtp_auth_access.$(DBEXT)
+
+/etc/postfix/smtp_auth_access.$(DBEXT): /etc/postfix/smtp_auth_access.in
+	postmap $(DBTYPE):/etc/postfix/smtp_auth_access.in
+	mv /etc/postfix/smtp_auth_access.in.$(DBEXT) /etc/postfix/smtp_auth_access.$(DBEXT)
+
+
