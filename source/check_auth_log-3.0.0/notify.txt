@@ -1,0 +1,34 @@
+Subject: Your email account has been temporarily blocked 
+
+Dear User,
+
+Your email account has been temporarily blocked because an unusual
+pattern of usage was detected (e.g. an unusually large number of
+messages in a short time span or logins from multiple locations
+in a short time span). This may mean that your password is no
+longer secure and your account has been compromised. To avoid
+potential misuse, we have temporarily blocked the account.
+
+In order to have your email account unblocked please contact
+the system administrator. It would also be wise to change your
+password as soon as possible.
+
+Passwords that follow the rules below are in general safer
+than ones that do not:
+- the password should be at least 8 or more characters
+- the password should contain a mix of uppercase, lowercase,
+  digits and punctuation.
+- the password should not contain your username
+- the password should not contain other information that may
+  be easy to find, e.g. your date of birth or that of family
+  members.
+
+Passwords should not be sent in an email message or saved
+in an unencrypted file.
+
+Where possible you should configure the use of encryption
+for reading and sending messages from your email software.
+
+Yours sincerely
+System Administrator
+

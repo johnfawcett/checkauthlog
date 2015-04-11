@@ -1,0 +1,165 @@
+PREREQUISITES
+-------------
+
+1. Postfix 
+2. PHP5 with DBA support (php5-dba)
+3. Oracle Berkley DB 4 or 5
+4. Optionally mysql and PHP mysql extension (php5-mysql)
+   if using mysql queries to block users instead of 
+   postfix access files
+
+
+
+INSTALL
+-------
+
+1. Copy the files to a suitable directory and change permissions
+
+e.g.	tar -xvzf check_auth_log_vX.Y.tgz
+	cd check_auth_log_vX.Y
+	mkdir /usr/local/bin/check_auth_log
+	cp check_auth_log /usr/local/bin/check_auth_log
+	cp run_check_auth_log /usr/local/bin/check_auth_log
+	cp check_auth_log_makefile /usr/local/bin/check_auth_log
+	cp check_auth_log.conf.sample /etc/check_auth_log.conf
+	chown root:root /usr/local/bin/check_auth_log/*
+	chmod 600 /usr/local/bin/check_auth_log/*
+
+2. Check that the path to php is correct at the first line of check_auth_log
+
+3. Customize configuration variables in /etc/check_auth_log.conf
+
+4. If using the email notification to blocked users, set up the template
+   file (see example notify.txt). The file contains headers and text of 
+   the notify message, with headers separated from the text by a blank line.
+   It is useful to specify at least a Subject: header. From: and To: headers
+   should not be specified as these are added by the script. Setup the 
+   notify_block_email_template variable to point to the template and make
+   sure the user running check_auth_log has read permission to the file.
+
+   notify_block_email_template = /path to template /notify.txt
+
+5. Depending on the blocking method you wish to use (via access files
+   mysql query or exim) follow the instructions below in one of 
+   sections A, B or C
+
+A. IF USING POSTFIX ACCESS FILES TO BLOCK USERS
+-----------------------------------------------
+
+(1) Customize variables in check_auth_log_makefile to your postfix installation
+	and database type/databsae extension (default is hash with .db extension)
+
+(2) Customize path in run_check_auth_log to your script install directory
+
+(3) If needed setup whitelist to exlude some senders from checks
+
+	touch /etc/postfix/smtp_auth_access_whitelist
+	postmap /etc/postfix/smtp_auth_access_whitelist
+
+If not using whitelist adjust the submission_sender_checks below so
+as not to list the whitelist.
+
+(4) Setup initial empty access database
+
+	touch /etc/postfix/smtp_auth_access
+	postmap /etc/postfix/smtp_auth_access
+
+(5) Update postfix submission access restrictions
+
+    In main.cf add a new smtpd_restriction_class. In that class the
+    suggested actions are 
+	- exclude any users needed via whitelist
+	- add check_sender_access to read the access file containing
+	  blocked senders (as written by check_auth_log script)
+	- rest of checks normally done in smtpd_sender_restrictions
+	  on your submission service (e.g. reject unless sender is
+	  logged in as owner of email address)
+
+main.cf:
+smtpd_restriction_classes = submission_sender_checks
+submission_sender_checks = check_sender_access hash:/etc/postfix/smtp_auth_access_whitelist,check_sender_access hash:/etc/postfix/smtp_auth_access,reject_sender_login_mismatch
+
+
+    In master.cf configure the smtp_sender_restrictions fro the submission
+    service.
+
+master.cf;
+submission inet n      -       n       -       -       smtpd
+...
+        -o smtpd_sender_restrictions=submission_sender_checks
+... 
+
+(6). reload postfix
+
+	postfix reload
+
+
+B. IF USING MYSQL TO BLOCK USERS
+--------------------------------
+
+(1) Customize variables in check_auth_log.conf to your mysql hostname
+	database and query for blocking/unblocking users
+
+	sql_connect:	mysql://username:password@hostname:port/database
+        sql_block:	update mailbox set active=0 where username='%u'
+        sql_unblock:	update mailbox set active=1 where username='%u'
+
+C. IF USING EXIM TO BLOCK USERS
+--------------------------------
+
+(1) Customize variables in check_auth_log_makefile to your exim installation
+
+Example
+
+	exim_blcok_file = /tmp/blocklist
+	exim_temp_file = /tmp/blocklist.out
+
+(2) In your exim configuration, setup so that those senders cannot send email.
+
+Example
+
+acl_check_sender:
+        deny    senders = /etc/blocklist
+        accept
+
+
+POST-INSTALL
+------------
+
+1. If upgrading from a previous version find the database files, e.g
+
+	ls -la /tmp/.check_auth_log*
+
+and remove them, for example
+	rm /tmp/.check_auth_log_cache
+	rm /tmp/.check_auth_log_db
+
+(this will also cancel previously logged authentications from the internal
+database)
+
+2. do a test run
+
+	/path-to-script/check_auth_log
+
+then check that the database and cache files have been created in the 
+configured locations, for example 
+	/tmp/.check_auth_log_cache
+	/tmp/.check_auth_log_db
+
+if there are sasl authentication sessions in the log file you should
+also get an output from:
+	/path-to-script/check_auth_log -x
+
+Check that blocking is set up correctly, so that if number of 
+authentications is exceeded then user is effectively blocked
+by chosen method (recommended to use a test account for this).
+
+3. Schedule in cron
+
+e.g. (if using access files)
+*/5 * * * *     root /usr/local/bin/check_auth_log/run_check_auth_log
+
+or (if using mysql)
+*/5 * * * *     root /usr/local/bin/check_auth_log/check_auth_log
+
+

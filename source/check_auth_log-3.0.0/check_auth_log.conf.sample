@@ -1,0 +1,235 @@
+; check_auth_log.conf
+;
+;syslog:
+;       output to syslog
+;	Default: true
+syslog = true
+
+;syslog_level:
+;       messages with lower priority than this setting are not logged
+;       Default value is LOG_INFO.
+;       More information can be logged by using LOG_DEBUG
+;       Less information can be logged by using LOG_NOTICE or LOG_WARNING
+syslog_level = LOG_INFO
+
+;syslog_facility
+;       set the syslog facility for check_auth_log output messages.
+;       May be one of the following (default LOG_MAIL)
+;       LOG_AUTH        security/authorization messages (use LOG_AUTHPRIV instead in systems where that constant is defined)
+;       LOG_AUTHPRIV    security/authorization messages (private)
+;       LOG_CRON        clock daemon (cron and at)
+;       LOG_DAEMON      other system daemons
+;       LOG_KERN        kernel messages
+;       LOG_LOCAL0 ... LOG_LOCAL7       reserved for local use, these are not available in Windows
+;       LOG_LPR         line printer subsystem
+;       LOG_MAIL        mail subsystem
+;       LOG_NEWS        USENET news subsystem
+;       LOG_SYSLOG      messages generated internally by syslogd
+;       LOG_USER        generic user-level messages
+;       LOG_UUCP        UUCP subsystem
+syslog_facility = LOG_MAIL
+
+;stdout:
+;       output to stdout
+;	Default: true
+stdout = true
+
+;stdout_level:
+;       message with lower priority than this setting are not logged
+;       Default value is LOG_WARNING.
+;       The default value works well when the job is scheduled from
+;       crontab with email notification, since this will create an
+;       output when a user is blocked, but not for ordinary info
+;       or notices.
+;       This setting is overridden by -t flag which always produces
+;       logging to standard output at LOG_DEBUG level.
+;       Note that -t flag does not override syslog_level.
+stdout_level = LOG_WARNING
+
+;mta:
+;	the mta. Default is postfix, also supported: exim
+mta = postfix
+
+;logfile:
+;       the mail log file to parse, this must already exist and be readable.
+logfile = /var/log/maillog
+
+;logfile_rotated:
+;       the mail log file to parse, this must already exist and be readable.
+logfile_rotated = /var/log/maillog-YYYYMMDD
+
+;cachefile:
+;       a suitable location for storing info about last log file line read.
+;       This file is created if it does not exist.
+cachefile = /tmp/.check_auth_log_cache
+
+;dbfile:
+;       a suitable location for storing info about sasl authentications
+;       login name, ip and timestamp are stored.
+;       This file is created if it does not exist.
+dbfile = /tmp/.check_auth_log_db
+
+;dbtype:
+;       type of database (depends on those supported by your install)
+;       db4 is recommended.
+;	This is a database for internal use and should not be confused
+;	with the databsae used to hold uers (e.g. mysql). Do not set
+;	this value to mysql.
+dbtype = db4
+
+;expire:
+;       window time in seconds before sasl authentication records are
+;       removed
+expire = 3600
+
+;auth_limit:
+;       how many authentications per sasl username are allowed within
+;       the expire window
+auth_limit = 100
+
+;ip_limit:
+;       how many different ips per sasl username are allowed within the
+;       expire window
+ip_limit = 5
+
+;max_auth_records:
+;       the maximum number of auth session records to store
+;       per sasl username
+max_auth_records = 200
+
+;ignored_users:
+;       comma separated list of users not to log or monitor
+;	Default: blank
+ignored_users = 
+
+;ignored_ips:
+;       comma separated list of ips not to log or monitor
+;       may optionally include cidr mask e.g. 192.168.1.0/24
+;	Default: blank
+ignored_ips = 
+
+;posix:
+;       whether to include posix functions for checking existing running
+; 	processes. Requires php posix extension. You can skip this 
+;	requirement (and relative checking) by setting to false. In
+;	this case the stale_lock_time is used to determine how long
+;	another process should be considered active before removing
+;	its lock. 
+;posix = true
+;
+;stale_lock_time:
+;       the time to wait before considering another process not active
+;stale_lock_time = 300
+
+;block_type:
+;       type of blocking method when users exceed predetermined limits
+;       mysql: run a query defined by query_block.
+;       access: write username to postfix access file defined by accessfile.
+;	exim: use a file of blocked accounts
+block_type = mysql
+
+;accesfile:
+;       defines the output file for postfix access map
+;       This file is created if it does not exist.
+accessfile = /etc/postfix/smtp_auth_access.in
+
+;reject_msg:
+;       the value to use on rhs of postfix access map
+reject_msg = REJECT send quota exceeded. Contact support to re-enable
+
+;sql_connect:
+;       connect string for database in format
+;       mysql://username:password@hostname:port/database
+sql_connect = mysql://username:password@hostname:port/database
+
+;sql_block:
+;       query to run for blocking user access. %u is substituted with
+;       the username
+sql_block = "update mailbox set active=0 where username='%u'"
+
+;sql_unblock:
+;       query to run for unblocking user access. %u is substituted
+;       with the username
+;	example
+sql_unblock = "update mailbox set active=1 where username='%u'"
+
+;exim_block_file
+;	file used by exim containing blocked email accounts
+;
+;exim_block_file = /tmp/blocklist
+
+; exim_temp_file
+;	file used when updating the exim blocklist. Modifications are
+;	done to a temporary file and then it is renamed
+;	in order to avoid exim using the file while it is still being
+;	updated.
+;
+;exim_temp_file = /tmp/blocklist.out
+
+;self_check_enabled:
+;       whether to report self check errors
+;       Default: true
+self_check_enabled = true
+
+;self_check_last_match_warning_time
+;       the time in seconds after which a warning is given if
+;       no match has been found
+;       If you have a busy mail server this could be set to a
+;       small value (but higher than the check frequency).
+;       For servers that do not send much email this should be
+;       set to a high value.
+;       Default 86400 (1 day)
+self_check_last_match_warning_time = 86400
+
+;self_check_last_log_warning_time
+;       the time in seconds after which a warning is given if
+;       no log lines have been found.
+;       This can normally be set to a small value but largert
+;       than the check frequency.
+;       Default 3600
+self_check_last_log_warning_time = 3600
+
+;self_check_mail_notify:
+;       whether to send notifications by email for self check
+;       warnings
+;       Default: false
+self_check_mail_notify = false
+
+;admin_mail_sender
+;       sender for self check notifications. Only used if
+;	self_check_mail_notify = true
+admin_mail_sender = 
+
+;admin_mail_destination
+;       destination for self check notifications. Only used
+;	if self_check_mail_notify = true
+admin_mail_destination = 
+
+;notify_blocked_users:
+;       whether to send a notify email to users that
+;       are blocked. The default is not to send the
+;       email. It is only worthwhile if the block
+;       does not afffect the ability to read email.
+;	Default: false
+notify_blocked_users = false
+
+;notify_block_email_template:
+;       the template containing the headers
+;	(for example Subject:) and
+;       message text to be sent to blocked users.
+;	The template may contain email headers 
+;	(except From: header is not required)
+;	and the body text separated from headers
+;	by a blank line.
+;	If the Subject line is detected to contain
+;	non ascii characters it will be encoded as
+;	UTF8.
+notify_block_email_template = /tmp/notify.txt
+
+;notify_block_sender:
+;       address from which email will be sent when
+;       notifying blocked users. Can be static address
+;       or use the variable $BLOCKED_DOMAIN
+notify_block_sender = Postmaster <postmaster@$BLOCKED_DOMAIN>
+
+
