@@ -3,15 +3,14 @@
 // check_auth_log
 //
 // Prevent malicious use of stolen email credentials to send large 
-// volumes of email through a postfix mail server. This program parses
-// sasl authentication info from postifx log file and if configurable 
-// limits are exceeded blocks further sending.
+// volumes of email through a Postfix or Exim mail server. This program
+// parses sasl authentication info from postifx log file and if 
+// configurable limits are exceeded blocks further sending.
 //
 // For installation instructions see file INSTALL.
-// For usage instructions see file USAGE.
 // For licensing see file LICENSE.
 // 
-// Copyright 2010-2014 John Fawcett (john at voipsupport.it)
+// Copyright 2010-2016 John Fawcett (john at voipsupport.it)
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -26,7 +25,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 $version='3.0.0';
-$copyright = 'check_auth_log version '.$version."\n".'Copyright 2010-2015 John Fawcett (john at voipsupport.it)'."\n".'Released under GPL v.3. There is no warranty';
+$copyright = 'check_auth_log version '.$version."\n".'Copyright 2010-2016 John Fawcett (john at voipsupport.it)'."\n".'Released under GPL v.3. There is no warranty';
 $debug=false;
 
 $opts=getopt('a:c:d:e:vtxyz');
