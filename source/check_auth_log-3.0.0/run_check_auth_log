@@ -1,5 +1,0 @@
-#!/bin/sh
-# only used for postfix access files. Otherwise not needed
-SCRIPTDIR=/customize_to_your_script_path
-$SCRIPTDIR/check_auth_log 
-/usr/bin/make -s -f $SCRIPTDIR/check_auth_log_makefile 
