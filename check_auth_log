@@ -3,8 +3,8 @@
 // check_auth_log
 //
 // Prevent malicious use of stolen email credentials to send large 
-// volumes of email through a postfix mail server. This program parses
-// sasl authentication info from postifx log file and if configurable 
+// volumes of email through a postfix or exim mail server. This program parses
+// sasl authentication info from mta log file and if configurable 
 // limits are exceeded blocks further sending.
 //
 // For installation instructions see file INSTALL.
