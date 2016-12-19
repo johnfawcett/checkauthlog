@@ -85,12 +85,20 @@ expire = 3600
 ;auth_limit:
 ;       how many authentications per sasl username are allowed within
 ;       the expire window
+;	A value of 0 indicates no limit
 auth_limit = 100
 
 ;ip_limit:
 ;       how many different ips per sasl username are allowed within the
 ;       expire window
+;	A value of 0 indicates no limit
 ip_limit = 5
+
+;recipient_limit:
+;       how many recipients per sasl username are allowed within the
+;       expire window
+;	A value of 0 indicates no limit
+ip_limit = 0
 
 ;max_auth_records:
 ;       the maximum number of auth session records to store

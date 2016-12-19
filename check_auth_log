@@ -3,14 +3,15 @@
 // check_auth_log
 //
 // Prevent malicious use of stolen email credentials to send large 
-// volumes of email through a Postfix or Exim mail server. This program
-// parses sasl authentication info from postifx log file and if 
-// configurable limits are exceeded blocks further sending.
+// volumes of email through a postfix mail server. This program parses
+// sasl authentication info from postifx log file and if configurable 
+// limits are exceeded blocks further sending.
 //
 // For installation instructions see file INSTALL.
+// For usage instructions see file USAGE.
 // For licensing see file LICENSE.
 // 
-// Copyright 2010-2016 John Fawcett (john at voipsupport.it)
+// Copyright 2010-2014 John Fawcett (john at emailsupport.it)
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -24,7 +25,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
-$version='3.0.0';
+$version='3.1.0';
 $copyright = 'check_auth_log version '.$version."\n".'Copyright 2010-2016 John Fawcett (john at voipsupport.it)'."\n".'Released under GPL v.3. There is no warranty';
 $debug=false;
 
@@ -174,17 +175,10 @@ $cached_vars=open_db($conf,$cached_vars,'dbfile','rw');
 $cached_vars=open_db($conf,$cached_vars,'cachefile','rw');
 $cached_vars=self_check($conf,$cached_vars);
 $cached_vars=read_previous_blocks($conf,$cached_vars);
-$cached_vars=locate_next_line($conf,$cached_vars,'log');
-$cached_vars=process_rotated_log($conf,$cached_vars,'log');
-$cached_vars=process_log($conf,$cached_vars,'log');
-save_position($conf,$cached_vars,'log');
-if ($conf['popfile'] !='')
-{
-	$cached_vars=locate_next_line($conf,$cached_vars,'pop');
-	$cached_vars=process_rotated_log($conf,$cached_vars,'pop');
-	$cached_vars=process_log($conf,$cached_vars,'pop');
-	save_position($conf,$cached_vars,'pop');
-}
+$cached_vars=locate_next_line($conf,$cached_vars);
+$cached_vars=process_rotated_log($conf,$cached_vars);
+$cached_vars=process_log($conf,$cached_vars);
+save_position($conf,$cached_vars);
 save_self_check_info($conf,$cached_vars);
 save_new_blocks($conf,$cached_vars);
 close_log($conf,$cached_vars);
@@ -215,14 +209,13 @@ function read_config($configfile)
 		'mta'=>'postfix',
 		'logfile'=>'/var/log/mail.log',
 		'logfile_rotated'=>'',
-		'popfile'=>'',
-		'popfile_rotated'=>'',
 		'cachefile'=>'/tmp/.check_auth_log_cache_db',
 		'dbfile'=>'/tmp/.check_auth_log_db',
 		'dbtype'=>'db4',
 		'expire'=>3600,
 		'auth_limit'=>100,
 		'ip_limit'=>3,
+		'recipient_limit'=>0,
 		'max_auth_records'=>200,
 		'ignored_users'=>'',
 		'ignored_ips'=>'',
@@ -322,6 +315,7 @@ function initialize($conf)
 		$notify_email = file_get_contents($conf['notify_block_email_template']);
 		if ($notify_email =='') output_message(LOG_CRIT,'notify_block_email_template must be a file containing the subject and body for the notification email . Exiting');
 	}
+	$conf['queueid_map']=array();
 	return $cached_vars;
 }
 
@@ -352,20 +346,20 @@ function open_db($conf,$cached_vars,$db,$mode)
 
 // open log file and position file pointer at next unread line
 
-function locate_next_line($conf,$cached_vars,$log)
+function locate_next_line($conf,$cached_vars)
 {
-	output_message(LOG_DEBUG,'start locate_next_line for '.$log);
+	output_message(LOG_DEBUG,'start locate_next_line');
 	$cached_vars['rotated']=false;
-	$log_fh=fopen($conf[$log.'file'],'r') or output_message(LOG_CRIT,'could not open file '.$conf[$log.'file'].'. Exiting');
+	$log_fh=fopen($conf['logfile'],'r') or output_message(LOG_CRIT,'could not open file '.$conf['logfile'].'. Exiting');
 	$firstline=fgets($log_fh);
-	$cached_vars[$log.'_fh']=$log_fh;
-	$cached_vars[$log.'_firstline']=$firstline;
+	$cached_vars['log_fh']=$log_fh;
+	$cached_vars['log_firstline']=$firstline;
 
 // no previous cache file pos, set log stream position to start of log
 
-	$stored_firstline=dba_fetch($log.'_firstline',$cached_vars['dbh_cachefile']);
-	$stored_lastline=dba_fetch($log.'_lastline',$cached_vars['dbh_cachefile']);
-	$stored_pos=dba_fetch($log.'_pos',$cached_vars['dbh_cachefile']);
+	$stored_firstline=dba_fetch('log_firstline',$cached_vars['dbh_cachefile']);
+	$stored_lastline=dba_fetch('log_lastline',$cached_vars['dbh_cachefile']);
+	$stored_pos=dba_fetch('log_pos',$cached_vars['dbh_cachefile']);
 	if(!$stored_pos || !$stored_lastline || !$stored_firstline)
 	{
 		$rc=fseek($log_fh,0);
@@ -377,10 +371,10 @@ function locate_next_line($conf,$cached_vars,$log)
 
 	if ($firstline != $stored_firstline && $stored_firstline !='')
 	{
-		if ($conf[$log.'file_rotated']!='')
+		if ($conf['logfile_rotated']!='')
 		{
-			$conf=update_rotated_logfile_name($conf,$log);
-			$log_fh_rot=fopen($conf[$log.'file_rotated'],'r') or output_message(LOG_CRIT,'could not open file '.$conf[$log.'file_rotated'].'. Exiting');
+			$conf=update_rotated_logfile_name($conf);
+			$log_fh_rot=fopen($conf['logfile_rotated'],'r') or output_message(LOG_CRIT,'could not open file '.$conf['logfile_rotated'].'. Exiting');
 
 			// set rotated log stream to last processed line
 
@@ -391,7 +385,7 @@ function locate_next_line($conf,$cached_vars,$log)
 			$lastline=fgets($log_fh_rot);
 			if ($lastline!==false && $lastline == $stored_lastline)
 			{
-				$cached_vars[$log.'_fh_rot']=$log_fh_rot;
+				$cached_vars['log_fh_rot']=$log_fh_rot;
 				$cached_vars['rotated']=true;
 			}
 		}
@@ -421,36 +415,36 @@ function locate_next_line($conf,$cached_vars,$log)
 
 // substitute variables in log file name
 
-function update_rotated_logfile_name($conf,$log)
+function update_rotated_logfile_name($conf)
 {
-	if (strpos($conf[$log.'file_rotated'],'YYYY')===FALSE)
+	if (strpos($conf['logfile_rotated'],'YYYY')===FALSE)
 	{
-		$conf[$log.'file_rotated']=str_replace('YY',date('y'),$conf[$log.'file_rotated']);
+		$conf['logfile_rotated']=str_replace('YY',date('y'),$conf['logfile_rotated']);
 	}
 	else
 	{
-		$conf[$log.'file_rotated']=str_replace('YYYY',date('Y'),$conf[$log.'file_rotated']);
+		$conf['logfile_rotated']=str_replace('YYYY',date('Y'),$conf['logfile_rotated']);
 	}
 
-	$conf[$log.'file_rotated']=str_replace('MM',date('m'),$conf[$log.'file_rotated']);
-	$conf[$log.'file_rotated']=str_replace('DD',date('d'),$conf[$log.'file_rotated']);
+	$conf['logfile_rotated']=str_replace('MM',date('m'),$conf['logfile_rotated']);
+	$conf['logfile_rotated']=str_replace('DD',date('d'),$conf['logfile_rotated']);
 	return $conf;
 }
 
 
 // process the log lines from current position to end of file
 
-function process_log($conf,$cached_vars,$log)
+function process_log($conf,$cached_vars)
 {
-	output_message(LOG_DEBUG,'start process_log for '.$log);
+	output_message(LOG_DEBUG,'start process_log');
 	$i=0;
-	while (!feof($cached_vars[$log.'_fh']))
+	while (!feof($cached_vars['log_fh']))
 	{
-		$line = fgets($cached_vars[$log.'_fh']);
+		$line = fgets($cached_vars['log_fh']);
 		if ($line !== false)
 		{
-			$cached_vars[$log.'_lastline']=$line;
-			$cached_vars=process_line($conf,$cached_vars,$line,$log);
+			$cached_vars['log_lastline']=$line;
+			$cached_vars=process_line($conf,$cached_vars,$line);
 			$i++;
 		}
 	}
@@ -460,18 +454,18 @@ function process_log($conf,$cached_vars,$log)
 
 // process the rotated log if needed 
 
-function process_rotated_log($conf,$cached_vars,$log)
+function process_rotated_log($conf,$cached_vars)
 {
-	output_message(LOG_DEBUG,'start process_rotated_log for '.$log);
+	output_message(LOG_DEBUG,'start process_rotated_log');
 	if (!$cached_vars['rotated'])
 		return $cached_vars;
 	$i=0;
-	while (!feof($cached_vars[$log.'_fh_rot']))
+	while (!feof($cached_vars['log_fh_rot']))
 	{
-		$line = fgets($cached_vars[$log.'_fh_rot']);
+		$line = fgets($cached_vars['log_fh_rot']);
 		if ($line !== false)
 		{
-			$cached_vars=process_line($conf,$cached_vars,$line,$log);
+			$cached_vars=process_line($conf,$cached_vars,$line);
 			$i++;
 		}
 	}
@@ -480,15 +474,15 @@ function process_rotated_log($conf,$cached_vars,$log)
 
 // save info about last log position to cache file 
 
-function save_position($conf,$cached_vars,$log)
+function save_position($conf,$cached_vars)
 {
-	output_message(LOG_DEBUG,'start save_position for '.$log);
+	output_message(LOG_DEBUG,'start save_position');
 	if ($cached_vars['lines_read']==0 && !$cached_vars['rotated']) return;
-	$pos=ftell($cached_vars[$log.'_fh']);
-	if (!isset($cached_vars[$log.'_lastline'])) $cached_vars[$log.'_lastline']='';
-	dba_replace($log.'_firstline',$cached_vars[$log.'_firstline'],$cached_vars['dbh_cachefile']) or output_message(LOG_CRIT,'cannot insert into db, key: '.$log.'_firstline. Exiting');
-	dba_replace($log.'_lastline',$cached_vars[$log.'_lastline'],$cached_vars['dbh_cachefile']) or output_message(LOG_CRIT,'cannot insert into db, key: '.$log.'_lastline. Exiting');
-	dba_replace($log.'_pos',$pos,$cached_vars['dbh_cachefile']) or output_message(LOG_CRIT,'cannot insert into db, key: '.$log.'_pos. Exiting');
+	$pos=ftell($cached_vars['log_fh']);
+	if (!isset($cached_vars['log_lastline'])) $cached_vars['log_lastline']='';
+	dba_replace('log_firstline',$cached_vars['log_firstline'],$cached_vars['dbh_cachefile']) or output_message(LOG_CRIT,'cannot insert into db, key: log_firstline. Exiting');
+	dba_replace('log_lastline',$cached_vars['log_lastline'],$cached_vars['dbh_cachefile']) or output_message(LOG_CRIT,'cannot insert into db, key: log_lastline. Exiting');
+	dba_replace('log_pos',$pos,$cached_vars['dbh_cachefile']) or output_message(LOG_CRIT,'cannot insert into db, key: log_pos. Exiting');
 }
 
 // save info for self check
@@ -518,107 +512,170 @@ function close_db($conf,$cached_vars,$db)
 
 // parse single log line, if it contains sasl authentication update database record and if limits exceeded apply block
 
-function process_line($conf,$cached_vars,$line,$log)
+function process_line($conf,$cached_vars,$line)
 {
-	list($rc,$ip,$login,$unix_ts)=match_line($conf,$cached_vars,$line,$log);
+	list($rc,$ret_type,$ret_array)=match_line($conf,$cached_vars,$line);
 	if ($rc)
-		output_message(LOG_DEBUG,"Found ip $ip, login $login, ts $unix_ts");
-	else
-		output_message(LOG_DEBUG, "Not found");
-
-	if($rc)
 	{
+		switch($ret_type)
+		{
+			case 'num_recipients':
+				return process_num_recipients_line($conf,$cached_vars,$ret_array);
+			break;
+			case 'login':
+			default:
+				return process_login_line($conf,$cached_vars,$ret_array);
+		}
+	}
+	else
+	{
+		output_message(LOG_DEBUG, "Not found");
+	}
+	return $cached_vars;
+}
+
+function process_login_line($conf,$cached_vars,$ret_array)
+{
+	list($ip,$login,$unix_ts,$queueid)=$ret_array;
+	output_message(LOG_DEBUG,"Found ip $ip, login $login, ts $unix_ts, queue id $queueid");
+	$cached_vars['queueid_map'][$queueid]=$login;
+
 // Update cached last timestamp variable (used for self check)
 
-		$cached_vars['last_match_ts'] = $unix_ts;
+	$cached_vars['last_match_ts'] = $unix_ts;
 
 // if user should be ignored stop processing
 
-		if (array_search($login,$conf['ignored_users_list'],true)!==false)
-		{
-			output_message(LOG_NOTICE,'Ignoring user '.$login.' in ignored_users');		
-			return $cached_vars;
-		}
+	if (array_search($login,$conf['ignored_users_list'],true)!==false)
+	{
+		output_message(LOG_NOTICE,'Ignoring user '.$login.' in ignored_users');		
+		return $cached_vars;
+	}
 
 // if ip should be ignored stop processing
 
-		if (in_iplist($ip,$conf['ignored_ips_list']))
-		{
-			output_message(LOG_NOTICE, 'Ignoring ip '.$ip.' in ignored_ips');		
-			return $cached_vars;
-		}
+	if (in_iplist($ip,$conf['ignored_ips_list']))
+	{
+		output_message(LOG_NOTICE, 'Ignoring ip '.$ip.' in ignored_ips');		
+		return $cached_vars;
+	}
 // update db with login 
 
-		$cur_val=dba_fetch($login,$cached_vars['dbh_dbfile']);
-		if ($cur_val === false)
-		{
-			$new_val= $ip.','.$unix_ts.';';	
-			$new_val=remove_expired($conf,$cached_vars,$new_val);
-			dba_insert($login,$new_val,$cached_vars['dbh_dbfile']) or output_message(LOG_CRIT,'cannot insert into db, key: '.$login.'. Exiting');
-		}
-		else
-		{
-			$new_val= $cur_val.$ip.','.$unix_ts.';';	
-			$new_val=remove_expired($conf,$cached_vars,$new_val);
-			dba_replace($login,$new_val,$cached_vars['dbh_dbfile']) or output_message(LOG_CRIT,'cannot insert into db, key: '.$login.'. Exiting');
-		}
-		$cached_vars=check_limit($conf,$cached_vars,$login,$new_val);
+	$cur_val=dba_fetch($login,$cached_vars['dbh_dbfile']);
+	if ($cur_val === false)
+	{
+		$new_val= $ip.','.$unix_ts.','.$queueid.',0;';	
+		$new_val=remove_expired($conf,$cached_vars,$new_val);
+		dba_insert($login,$new_val,$cached_vars['dbh_dbfile']) or output_message(LOG_CRIT,'cannot insert into db, key: '.$login.'. Exiting');
 	}
+	else
+	{
+		$new_val= $cur_val.$ip.','.$unix_ts.','.$queueid.',0;';	
+		$new_val=remove_expired($conf,$cached_vars,$new_val);
+		dba_replace($login,$new_val,$cached_vars['dbh_dbfile']) or output_message(LOG_CRIT,'cannot replace in db, key: '.$login.'. Exiting');
+	}
+	$cached_vars=check_login_limit($conf,$cached_vars,$login,$new_val);
+	return $cached_vars;
+}
+
+function process_num_recipients_line($conf,$cached_vars,$ret_array)
+{
+	list($queueid,$num_recipients)=$ret_array;
+	$login= isset($cached_vars['queueid_map'][$queueid]) ? $cached_vars['queueid_map'][$queueid] : '';
+	output_message(LOG_DEBUG,"Found number of receipients $num_recipients for queue id $queueid login $login");
+
+	if ($login=='') return $cached_vars;
+
+// update db with number or recipients 
+
+	$cur_val=dba_fetch($login,$cached_vars['dbh_dbfile']);
+	if ($cur_val === false)
+	{
+	}
+	else
+	{
+		$new_val=update_nrcpt($conf,$cached_vars,$cur_val,$queueid,$num_recipients);
+		dba_replace($login,$new_val,$cached_vars['dbh_dbfile']) or output_message(LOG_CRIT,'cannot replace in db, key: '.$login.'. Exiting');
+	}
+	$cached_vars=check_recipient_limit($conf,$cached_vars,$login,$new_val);
+	unset($cached_vars['queueid_map'][$queueid]);
 	return $cached_vars;
 }
 
 // parsing of the log lines delegated to this function in order to better manage support for multiple mtas
 
-function match_line($conf,$cached_vars,$line,$log)
+function match_line($conf,$cached_vars,$line)
 {
         output_message(LOG_DEBUG,'processing log line: '.$line);
-	if ($log=='log')
-        {
-		$ts_pos=1;
-		$ip_pos=2;
-		$login_pos=3;
-	        switch($conf['mta'])
-	        {
-        	        case 'exim':
-               	        	$pattern='/^(\d+-\d+-\d+ \d+\:\d+\:\d+).*H=.* \[(\d+\.\d+\.\d+\.\d+)\] P=\w+.*A=\w+\:(\S*)/';
-                   		break;
-                	case 'postfix':
-                	default:
-                        	$pattern='/^(\S*\s*\S*\s*\S*)\s\S*\s\S*\s\S*\sclient=[^\[]*\[(\S*)\], sasl_method=\S*, sasl_username=(\S*)/';
-                        	break;
-        	}
-        }
-	if ($log=='pop')
-        {
-		$ts_pos=1;
-		$ip_pos=3;
-		$login_pos=2;
-		$pattern='/^(\S*\s*\S*\s*\S*).*pop3-login: Login: user=<(\S*)>.*rip=(\d+\.\d+\.\d+\.\d+)/';
-        }
+	switch($conf['mta'])
+	{
+                case 'exim':
+                       	$pattern='/^(\d+-\d+-\d+ \d+\:\d+\:\d+).*H=.* \[(\d+\.\d+\.\d+\.\d+)\] P=\w+.*A=\w+\:(\S*)/';
+			$rc = match_login_line($conf,$pattern,$line);
+			if ($rc !== false) return $rc;
+               		break;
+               	case 'postfix':
+               	default:
+                       	$pattern='/^(\S*\s*\S*\s*\S*)\s\S*\s\S*\s(\S*):\sclient=[^\[]*\[(\S*)\], sasl_method=\S*, sasl_username=(\S*)/';
+			$rc = match_login_line($conf,$pattern,$line);
+			if ($rc !== false) return $rc;
+                       	$pattern='/^(\S*\s*\S*\s*\S*)\s\S*\s\S*\s(\S*):\sfrom=\S*\ssize=\d+,\snrcpt=(\d+)\s\(queue\sactive\)/';
+			$rc = match_num_recipients_line($conf,$pattern,$line);
+			if ($rc !== false) return $rc;
+                       	break;
+       	}
+        return array(false,'',array());
+}
+
+function match_login_line($conf,$pattern,$line)
+{
         $rc= preg_match($pattern, $line, $matches);
         if($rc != 0)
         {
-                $ip=$matches[$ip_pos];
-                $login=$matches[$login_pos];
                 if ($conf['mta']=='exim')
-                {
+        	{
+			$ts_pos=1;
+			$ip_pos=2;
+			$login_pos=3;
+                	$queueid='';
                         $dt = $matches[$ts_pos];
                 }
-                if ($conf['mta']=='postfix'||$log='pop')
+                if ($conf['mta']=='postfix')
                 {
+			$ts_pos=1;
+			$queueid_pos=2;
+			$ip_pos=3;
+			$login_pos=4;
+                	$queueid=$matches[$queueid_pos];
                         $ts=str_replace('  ',' ',$matches[$ts_pos]);
                         list($month,$day,$ts_time) = explode(' ',$ts);
                         $year = date('Y');
                         list($hour,$min,$sec) = explode(':',$ts_time);
                         $dt = $day.'-'.$month.'-'.$year.' '.$ts_time;
                 }
+                $ip=$matches[$ip_pos];
+                $login=$matches[$login_pos];
                 if (($unix_ts = strtotime($dt)) === false)
                 {
                         output_message (LOG_CRIT,'unable to convert string to timestamp '.$dt.' (timestamp was: '.$ts.')'.'. Exiting');
                 }
-                return array(true,$ip,$login,$unix_ts);
+                return array(true,'login',array($ip,$login,$unix_ts,$queueid));
         }
-        return array(false,'','','');
+        return false;
+}
+function match_num_recipients_line($conf,$pattern,$line)
+{
+        $rc= preg_match($pattern, $line, $matches);
+        if($rc != 0)
+	{
+		$ts_pos=1;
+		$queueid_pos=2;
+		$num_recipients_pos=3;
+                $queueid=$matches[$queueid_pos];
+                $num_recipients=$matches[$num_recipients_pos];
+                return array(true,'num_recipients',array($queueid,$num_recipients));
+	}
+        return false;
 }
 
 
@@ -637,8 +694,32 @@ function remove_expired($conf,$cached_vars,$cur_val)
 	{
 		if ($val != '')
 		{
-			list($ip,$unix_ts) = explode(',',$val);
+			list($ip,$unix_ts,$queueid,$num_recipients) = explode(',',$val);
 			if ($unix_ts+$conf['expire'] > $cached_vars['ref_ts']) $new_val.=$val.';';	
+		}
+	}
+	return $new_val;
+}
+
+function update_nrcpt($conf,$cached_vars,$cur_val,$queueid,$num_recipients)
+{
+	if ($cur_val=='') return '';
+	$new_val='';
+	$vals=explode(';',$cur_val);
+	foreach($vals as $val)
+	{
+		if ($val != '')
+		{
+			list($ip,$unix_ts,$cur_queueid,$cur_num_recipients) = explode(',',$val);
+			if ($cur_queueid==$queueid)
+			{
+				$new_num_recipients = $cur_num_recipients + $num_recipients;
+				$new_val.=$ip.','.$unix_ts.','.$cur_queueid.','.$new_num_recipients.';';	
+			}
+			else
+			{
+				$new_val.=$val.';';
+			}
 		}
 	}
 	return $new_val;
@@ -646,7 +727,7 @@ function remove_expired($conf,$cached_vars,$cur_val)
 
 // Checks if limits exceeded and applies block to username
 
-function check_limit($conf,$cached_vars,$login,$new_val)
+function check_login_limit($conf,$cached_vars,$login,$new_val)
 {
 	if ($new_val=='') return $cached_vars;
 	$ips=array();
@@ -655,7 +736,7 @@ function check_limit($conf,$cached_vars,$login,$new_val)
 	{
 		if ($val != '')
 		{
-			list($ip,$unix_ts) = explode(',',$val);
+			list($ip,$unix_ts,$queueid,$num_recipients) = explode(',',$val);
 			$ips[]=$ip;
 		}
 	}
@@ -666,30 +747,57 @@ function check_limit($conf,$cached_vars,$login,$new_val)
 	if ((($conf['auth_limit'] != 0 && $login_count > $conf['auth_limit']) || ($conf['ip_limit'] !=0 && $ip_count> $conf['ip_limit']))
 	&& !already_blocked($cached_vars,$login))
 	{
+		output_message(LOG_WARNING,'Blocking user: '.$login.' after '.$login_count.' logins from '.$ip_count.' ips in '.$conf['expire'].' seconds');
+		$cached_vars=block_user($conf,$cached_vars,$login);
+	}
+	return $cached_vars;
+}
+
+function check_recipient_limit($conf,$cached_vars,$login,$new_val)
+{
+	if ($new_val=='') return $cached_vars;
+	$total_recipients=0;
+	$vals=explode(';',$new_val);
+	foreach($vals as $val)
+	{
+		if ($val != '')
+		{
+			list($ip,$unix_ts,$queueid,$num_recipients) = explode(',',$val);
+			$total_recipients+=$num_recipients;
+		}
+	}
+	if (($conf['recipient_limit'] != 0 && $total_recipients > $conf['recipient_limit'])
+	&& !already_blocked($cached_vars,$login))
+	{
+		output_message(LOG_WARNING,'Blocking user: '.$login.' after '.$total_recipients.' recipeints in '.$conf['expire'].' seconds');
+		$cached_vars=block_user($conf,$cached_vars,$login);
+	}
+	return $cached_vars;
+}
 
 // block user
-		output_message(LOG_WARNING,'Blocking user: '.$login.' after '.$login_count.' logins from '.$ip_count.' ips in '.$conf['expire'].' seconds');
-		switch($conf['block_type'])
-		{
-			case 'test':
-				break;
-			case 'mysql':
-				update_user_mysql($conf,$login,'block');
-				break;
-			case 'exim':
-				add_exim_record($conf,$login);
-				break;
-			case 'access':
-			default:
-				add_access_record($conf,$login);
-				break;
-		}
-		$cached_vars['new_blocks'][]=$login;
-		$cached_vars['access_changes']=true;
-		if ($conf['notify_blocked_users'])
-		{
-			notify_blocked_user($conf,$login);
-		}
+function block_user($conf,$cached_vars,$login)
+{
+	switch($conf['block_type'])
+	{
+		case 'test':
+			break;
+		case 'mysql':
+			update_user_mysql($conf,$login,'block');
+			break;
+		case 'exim':
+			add_exim_record($conf,$login);
+			break;
+		case 'access':
+		default:
+			add_access_record($conf,$login);
+			break;
+	}
+	$cached_vars['new_blocks'][]=$login;
+	$cached_vars['access_changes']=true;
+	if ($conf['notify_blocked_users'])
+	{
+		notify_blocked_user($conf,$login);
 	}
 	return $cached_vars;
 }
@@ -901,8 +1009,8 @@ function extract_db($conf,$cached_vars,$db)
 			{
 				if ($val != '')
 				{
-					list($ip,$unix_ts) = explode(',',$val);
-					echo "\t".'ip: '.$ip.' time: '.date('Y-m-d H:i:s',$unix_ts)."\n";
+					list($ip,$unix_ts,$queueid,$num_recipients) = explode(',',$val);
+					echo "\t".'ip: '.$ip.' time: '.date('Y-m-d H:i:s',$unix_ts)."\t".'queue id: '.$queueid."\t".'nrcpt: '.$num_recipients."\n";
 				}
 			}
 		}
