@@ -25,7 +25,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
-$version='3.1.0';
+$version='3.1.1';
 $copyright = 'check_auth_log version '.$version."\n".'Copyright 2010-2016 John Fawcett (john at voipsupport.it)'."\n".'Released under GPL v.3. There is no warranty';
 $debug=false;
 
@@ -616,7 +616,7 @@ function match_line($conf,$cached_vars,$line)
                		break;
                	case 'postfix':
                	default:
-                       	$pattern='/^(\S*\s*\S*\s*\S*)\s\S*\s\S*\s(\S*):\sclient=[^\[]*\[(\S*)\], sasl_method=\S*, sasl_username=(\S*)/';
+                       	$pattern='/^(\S*\s*\S*\s*\S*)\s\S*\s\S*\s(\S*):\sclient=[^\[]*\[(\S*)\](?:\:\d+)?, sasl_method=\S*, sasl_username=(\S*)/';
 			$rc = match_login_line($conf,$pattern,$line);
 			if ($rc !== false) return $rc;
                        	$pattern='/^(\S*\s*\S*\s*\S*)\s\S*\s\S*\s(\S*):\sfrom=\S*\ssize=\d+,\snrcpt=(\d+)\s\(queue\sactive\)/';
