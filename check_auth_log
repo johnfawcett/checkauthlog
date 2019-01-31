@@ -25,8 +25,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
-$version='3.1.1';
-$copyright = 'check_auth_log version '.$version."\n".'Copyright 2010-2016 John Fawcett (john at voipsupport.it)'."\n".'Released under GPL v.3. There is no warranty';
+$version='3.1.2';
+$copyright = 'check_auth_log version '.$version."\n".'Copyright 2010-2019 John Fawcett (john at voipsupport.it)'."\n".'Released under GPL v.3. There is no warranty';
 $debug=false;
 
 $opts=getopt('a:c:d:e:vtxyz');
@@ -168,7 +168,7 @@ if (isset($opts['z']))
 	exit;
 }
 
-// if no -a -d -x -y option then do a normal run
+// if no -a -d -x -y -z option then do a normal run
 
 $cached_vars=initialize($conf);
 $cached_vars=open_db($conf,$cached_vars,'dbfile','rw');
@@ -196,6 +196,8 @@ function read_config($configfile)
 		$conf['configfile']='/etc/check_auth_log.conf';
 	else
 		$conf['configfile']=$configfile;
+
+	if ($debug) echo 'Using config file '.$conf['configfile']."\n";
 
 // read config file
 	$ini=parse_ini_file($conf['configfile']);
@@ -266,8 +268,10 @@ function read_config($configfile)
 
 function initialize($conf)
 {
+	global $debug;
 	output_message(LOG_DEBUG,'start initalize');
 	$cached_vars['ref_ts']=time();	
+	if ($debug) echo 'time now is '. $cached_vars['ref_ts'].' (unix) = '.date('YmdHis',$cached_vars['ref_ts'])."\n";
 	$cached_vars['access_changes']=false;
 	$cached_vars['rotated']=false;
 	$found=false;
@@ -1145,6 +1149,7 @@ function output_message($priority,$msg)
 
 function self_check($conf,$cached_vars)
 {
+	global $debug;
 
 // if self check is disabled, bypass it
 
@@ -1156,7 +1161,8 @@ function self_check($conf,$cached_vars)
 	$last_match_ts=intval(dba_fetch('last_match_ts',$cached_vars['dbh_cachefile']));
 	if ($last_match_ts!==false)
 	{
-		if (time()-$conf['self_check_last_match_warning_time'] > $last_match_ts)
+		if($debug) echo 'Fetched last_match_ts '.$last_match_ts.' (unix) = '.date('YmdHis',$last_match_ts)."\n";
+		if ($cached_vars['ref_ts']-$conf['self_check_last_match_warning_time'] > $last_match_ts)
 		{
 			$msg='last_match_ts '.date('YmdHis',$last_match_ts).' is older than self_check_last_match_warning_time';
 			output_message(LOG_WARNING,$msg);
@@ -1168,13 +1174,18 @@ function self_check($conf,$cached_vars)
 			output_message(LOG_INFO,'last_match_ts '.date('YmdHis',$last_match_ts).' check ok ');
 		}
 	}
+	else
+	{
+		output_message(LOG_WARNING,'Unable to read last_match_ts from '.$conf['cachefile']);
+	}
 
 // check last log entry read
 
 	$last_log_ts=intval(dba_fetch('last_log_ts',$cached_vars['dbh_cachefile']));
 	if ($last_log_ts !==false)
 	{
-		if ($last_log_ts !==false && (time()-$conf['self_check_last_log_warning_time'] > $last_log_ts))
+		if($debug) echo 'Fetched last_log_ts '.$last_log_ts.' (unix) = '.date('YmdHis',$last_log_ts)."\n";
+		if ($cached_vars['ref_ts']-$conf['self_check_last_log_warning_time'] > $last_log_ts)
 		{
 			$msg='last_log_ts '.date('YmdHis',$last_log_ts).' is older than self_check_last_log_warning_time';
 			output_message(LOG_WARNING,$msg);
@@ -1186,7 +1197,10 @@ function self_check($conf,$cached_vars)
 			output_message(LOG_INFO,'last_log_ts '.date('YmdHis',$last_log_ts).' check ok ');
 		}
 	}
-
+	else
+	{
+		output_message(LOG_WARNING,'Unable to read last_log_ts from '.$conf['cachefile']);
+	}
 	return $cached_vars;
 }
 
