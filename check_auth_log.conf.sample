@@ -240,4 +240,9 @@ notify_block_email_template = /tmp/notify.txt
 ;       or use the variable $BLOCKED_DOMAIN
 notify_block_sender = Postmaster <postmaster@$BLOCKED_DOMAIN>
 
+;log_tz_offset:
+;       if the log times and php timezone are not aligned then set this
+;       to an value in seconds to add to the log times as converted
+;       to unix timestamps based on current php timezone
+;log_tz_offset = 0
 

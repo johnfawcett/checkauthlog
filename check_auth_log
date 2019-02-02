@@ -25,7 +25,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
-$version='3.1.3';
+$version='3.2.0';
 $copyright = 'check_auth_log version '.$version."\n".'Copyright 2010-2019 John Fawcett (john at voipsupport.it)'."\n".'Released under GPL v.3. There is no warranty';
 $debug=false;
 
@@ -164,11 +164,11 @@ if (isset($opts['z']))
 	$cached_vars=open_db($conf,$cached_vars,'cachefile','r');
 	self_check($conf,$cached_vars);
 	close_db($conf,$cached_vars,'cachefile');
-	output_message(LOG_INFO,'check_auth_log -z ended');
+	output_message(LOG_INFO,'check_auth_log -z ended. Unix timestamp='.time().' localtime='.date('YmdHis').' timezone='.date_default_timezone_get());
 	exit;
 }
 
-// if no -a -d -e -x -y -z option then do a normal run
+// if no -a -d -e -v -x -y -z option then do a normal run
 
 $cached_vars=initialize($conf);
 $cached_vars=open_db($conf,$cached_vars,'dbfile','rw');
@@ -184,7 +184,7 @@ save_new_blocks($conf,$cached_vars);
 close_log($conf,$cached_vars);
 close_db($conf,$cached_vars,'dbfile');
 close_db($conf,$cached_vars,'cachefile');
-output_message(LOG_INFO,'check_auth_log ended');
+output_message(LOG_INFO,'check_auth_log ended. Unix timestamp='.time().' localtime='.date('YmdHis').' timezone='.date_default_timezone_get());
 
 // set the configuration parameters.
 
@@ -234,6 +234,7 @@ function read_config($configfile)
 		'self_check_last_match_warning_time'=>86400,
 		'self_check_last_log_warning_time'=>3600,
 		'self_check_mail_notify'=>false,
+		'log_tz_offset'=>0,
 		'admin_mail_sender'=>'',
 		'admin_mail_destination'=>'',
 		'notify_blocked_users'=>false,
@@ -496,7 +497,7 @@ function save_self_check_info($conf,$cached_vars)
 	output_message(LOG_DEBUG,'start save_self_check_info');
 	if (isset($cached_vars['last_match_ts']))
 		dba_replace('last_match_ts',$cached_vars['last_match_ts'],$cached_vars['dbh_cachefile']) or output_message(LOG_CRIT,'cannot insert into db, key: last_match_ts. Exiting');
-	$last_log_ts=get_unix_ts($cached_vars['log_lastline']);
+	$last_log_ts=get_unix_ts_from_logline($conf,$cached_vars['log_lastline']);
 	dba_replace('last_log_ts',$last_log_ts,$cached_vars['dbh_cachefile']) or output_message(LOG_CRIT,'cannot insert into db, key: last_log_ts. Exiting');
 }
 
@@ -525,15 +526,20 @@ function process_line($conf,$cached_vars,$line)
 		{
 			case 'num_recipients':
 				return process_num_recipients_line($conf,$cached_vars,$ret_array);
-			break;
+				break;
+			case 'check_auth_log':
+				return process_check_auth_log_line($conf,$cached_vars,$ret_array);
+				break;
 			case 'login':
-			default:
 				return process_login_line($conf,$cached_vars,$ret_array);
+				break;
+			default:
+				output_message(LOG_ERR, 'Unknown match type');
 		}
 	}
 	else
 	{
-		output_message(LOG_DEBUG, "Not found");
+		output_message(LOG_DEBUG, 'Not found');
 	}
 	return $cached_vars;
 }
@@ -608,6 +614,24 @@ function process_num_recipients_line($conf,$cached_vars,$ret_array)
 
 // parsing of the log lines delegated to this function in order to better manage support for multiple mtas
 
+function process_check_auth_log_line($conf,$cached_vars,$ret_array)
+{
+	global $debug;
+
+	list($ref_ts,$localtime,$timezone,$unix_ts)=$ret_array;
+	output_message(LOG_DEBUG,"Found ref_ts $ref_ts, localtime $localtime, timezone $timezone, ts $unix_ts");
+	$ts_diff = $ref_ts - $unix_ts;
+	if ($ts_diff > 5 || $ts_diff < -5)
+	{
+		output_message(LOG_ERR,'There is a difference between the log timestamps and the time calculated by the script of '.$ts_diff.'. This will prevent the script from working correctly. Please set/adjust log_tz_offset in check_auth_log.conf to/by a value near this difference.'); 
+	}
+	else
+	{
+		if ($debug) echo 'Difference between the log timestamps and the time calculated by the script of '.$ts_diff.'. OK'."\n"; 
+	}
+	return $cached_vars;
+}
+
 function match_line($conf,$cached_vars,$line)
 {
         output_message(LOG_DEBUG,'processing log line: '.$line);
@@ -620,11 +644,22 @@ function match_line($conf,$cached_vars,$line)
                		break;
                	case 'postfix':
                	default:
+# Feb  2 01:00:04 server02 postfix/submission/smtpd[18059]: 43rvH83Gwpz3wp4: client=a.b.ccc[1.2.3.4]:49099, sasl_method=LOGIN, sasl_username=aaaa@bbb.ccc
+
                        	$pattern='/^(\S*\s*\S*\s*\S*)\s\S*\s\S*\s(\S*):\sclient=[^\[]*\[(\S*)\](?:\:\d+)?, sasl_method=\S*, sasl_username=(\S*)/';
 			$rc = match_login_line($conf,$pattern,$line);
 			if ($rc !== false) return $rc;
+
+# Feb  2 11:04:36 server02 postfix/qmgr[9549]: 43s8hh4lvbz3wfm: from=<aaa@bbb.ccc>, size=3211, nrcpt=2 (queue active)
+
                        	$pattern='/^(\S*\s*\S*\s*\S*)\s\S*\s\S*\s(\S*):\sfrom=\S*\ssize=\d+,\snrcpt=(\d+)\s\(queue\sactive\)/';
 			$rc = match_num_recipients_line($conf,$pattern,$line);
+			if ($rc !== false) return $rc;
+
+#Feb  2 10:57:23 server02 check_auth_log[8333]: check_auth_log ended. Unix timestamp=1549101443 localtime=20190202105723 timezone=Europe/Rome
+
+                       	$pattern='/^(\S*\s*\S*\s*\S*)\s\S*\s\S*:\scheck_auth_log ended. Unix timestamp=(\d+) localtime=(\d+) timezone=(\S*)/';
+			$rc = match_check_auth_log_line($conf,$pattern,$line);
 			if ($rc !== false) return $rc;
                        	break;
        	}
@@ -643,6 +678,7 @@ function match_login_line($conf,$pattern,$line)
 			$login_pos=3;
                 	$queueid='';
                         $dt = $matches[$ts_pos];
+			$unix_ts = get_unix_ts_normalized($conf,$dt);
                 }
                 if ($conf['mta']=='postfix')
                 {
@@ -651,22 +687,19 @@ function match_login_line($conf,$pattern,$line)
 			$ip_pos=3;
 			$login_pos=4;
                 	$queueid=$matches[$queueid_pos];
-                        $ts=str_replace('  ',' ',$matches[$ts_pos]);
-                        list($month,$day,$ts_time) = explode(' ',$ts);
-                        $year = date('Y');
-                        list($hour,$min,$sec) = explode(':',$ts_time);
-                        $dt = $day.'-'.$month.'-'.$year.' '.$ts_time;
+			$unix_ts = get_unix_ts($conf,$matches[$ts_pos]);
                 }
                 $ip=$matches[$ip_pos];
                 $login=$matches[$login_pos];
-                if (($unix_ts = strtotime($dt)) === false)
+                if ($unix_ts === false)
                 {
-                        output_message (LOG_CRIT,'unable to convert string to timestamp '.$dt.' (timestamp was: '.$ts.')'.'. Exiting');
+                        output_message (LOG_CRIT,'unable to convert string to timestamp.  Exiting');
                 }
                 return array(true,'login',array($ip,$login,$unix_ts,$queueid));
         }
         return false;
 }
+
 function match_num_recipients_line($conf,$pattern,$line)
 {
         $rc= preg_match($pattern, $line, $matches);
@@ -679,6 +712,43 @@ function match_num_recipients_line($conf,$pattern,$line)
                 $num_recipients=$matches[$num_recipients_pos];
                 return array(true,'num_recipients',array($queueid,$num_recipients));
 	}
+        return false;
+}
+
+function match_check_auth_log_line($conf,$pattern,$line)
+{
+        $rc= preg_match($pattern, $line, $matches);
+        if($rc != 0)
+        {
+                if ($conf['mta']=='exim')
+        	{
+			$ts_pos=1;
+			$ref_ts_pos=2;
+			$localtime_pos=3;
+			$timezone_pos=4;
+                	$ref_ts=$matches[$ref_ts_pos];
+                	$localtime=$matches[$localtime_pos];
+                	$timezone=$matches[$timezone_pos];
+                        $dt = $matches[$ts_pos];
+			$unix_ts = get_unix_ts_normalized($conf,$dt);
+                }
+                if ($conf['mta']=='postfix')
+                {
+			$ts_pos=1;
+			$ref_ts_pos=2;
+			$localtime_pos=3;
+			$timezone_pos=4;
+                	$ref_ts=$matches[$ref_ts_pos];
+                	$localtime=$matches[$localtime_pos];
+                	$timezone=$matches[$timezone_pos];
+			$unix_ts = get_unix_ts($conf,$matches[$ts_pos]);
+                }
+                if ($unix_ts === false)
+                {
+                        output_message (LOG_CRIT,'unable to convert string to timestamp '.$dt.' (timestamp was: '.$matches[$ts_pos].')'.'. Exiting');
+                }
+                return array(true,'check_auth_log',array($ref_ts,$localtime,$timezone,$unix_ts));
+        }
         return false;
 }
 
@@ -1094,7 +1164,7 @@ function validate_cidr($net)
         return true;
 }
 
-function get_unix_ts($line)
+function get_unix_ts_from_logline($conf,$line)
 {
 	global $debug;
 
@@ -1103,25 +1173,45 @@ function get_unix_ts($line)
         $rc= preg_match($pattern, $line, $matches);
         if($rc != 0)
         {
-		$ts=str_replace('  ',' ',$matches[$ts_pos]);
-		list($month,$day,$ts_time) = explode(' ',$ts);
-		$year = date('Y');
-		list($hour,$min,$sec) = explode(':',$ts_time);
-		$dt = $day.'-'.$month.'-'.$year.' '.$ts_time;
-                if (($unix_ts = strtotime($dt)) === false)
+		$unix_ts = get_unix_ts($conf,$matches[$ts_pos]);
+                if ($unix_ts === false)
 		{
-			output_message (LOG_ERR,'unable to convert string to timestamp '.$dt.' (timestamp was: '.$ts.')');
 			return 'error';
 		}
-		else
+		else	
 		{
-			if ($debug) echo 'Found date/time '.$ts.' in logline and converted it to unix timestamp '.$unix_ts.' = '.date('YmdHis',$unix_ts)."\n";
+			if ($debug) echo 'Found date/time '.$matches[$ts_pos].' in logline and converted it to unix timestamp '.$unix_ts.' = '.date('YmdHis',$unix_ts)."\n";
 		}
 	}
 	else
         {
 		output_message (LOG_ERR,'unable to find time string in logline '.$line);
 		return 'error';
+	}
+	return $unix_ts;
+}
+
+function get_unix_ts($conf,$log_ts)
+{
+	$ts=str_replace('  ',' ',$log_ts);
+	list($month,$day,$ts_time) = explode(' ',$ts);
+	$year = date('Y');
+// TO DO: the following assumes timestamp is current year. Almost always right
+//        except for parsing first time on 1 Jan with log lines from 31 Dec
+	$year = date('Y');
+	$dt = $day.'-'.$month.'-'.$year.' '.$ts_time;
+	return get_unix_ts_normalized($conf,$dt);
+}
+
+function get_unix_ts_normalized($conf,$dt)
+{
+	if (($unix_ts = strtotime($dt)) === false)
+	{
+		output_message (LOG_ERR,'unable to convert string to timestamp '.$dt.' (timestamp was: '.$log_ts.')');
+	}
+	else
+	{
+		$unix_ts += $conf['log_tz_offset'];
 	}
 	return $unix_ts;
 }
