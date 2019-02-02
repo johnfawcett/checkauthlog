@@ -25,7 +25,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
-$version='3.1.2';
+$version='3.1.3';
 $copyright = 'check_auth_log version '.$version."\n".'Copyright 2010-2019 John Fawcett (john at voipsupport.it)'."\n".'Released under GPL v.3. There is no warranty';
 $debug=false;
 
@@ -168,7 +168,7 @@ if (isset($opts['z']))
 	exit;
 }
 
-// if no -a -d -x -y -z option then do a normal run
+// if no -a -d -e -x -y -z option then do a normal run
 
 $cached_vars=initialize($conf);
 $cached_vars=open_db($conf,$cached_vars,'dbfile','rw');
@@ -251,9 +251,8 @@ function read_config($configfile)
 // set config values to ini values if present else defaults
 	foreach($defaults as $k=>$d)
 	{
-		if ($debug) echo 'Variable ('.$k.') default ('.$d.') using ';	
 		if (isset($ini[$k])) $conf[$k]=$ini[$k]; else $conf[$k]=$d;
-		if ($debug) echo '('.$conf[$k].")\n";
+		if ($debug) echo 'Variable ('.$k.') default ('.$d.') using ('.$conf[$k].")\n";
 	}
 	$conf['ignored_users_list']= ($conf['ignored_users']!='') ? explode(',',$conf['ignored_users']) : array();
 	if ($debug) echo 'Calculated variable (ignored_users_list) default () using ';
@@ -272,6 +271,7 @@ function initialize($conf)
 	output_message(LOG_DEBUG,'start initalize');
 	$cached_vars['ref_ts']=time();	
 	if ($debug) echo 'time now is '. $cached_vars['ref_ts'].' (unix) = '.date('YmdHis',$cached_vars['ref_ts'])."\n";
+	if ($debug) echo 'default time zone '.date_default_timezone_get()."\n";
 	$cached_vars['access_changes']=false;
 	$cached_vars['rotated']=false;
 	$found=false;
@@ -1096,6 +1096,8 @@ function validate_cidr($net)
 
 function get_unix_ts($line)
 {
+	global $debug;
+
 	$pattern='/^(\S*\s*\S*\s*\S*)/';
 	$ts_pos=1;
         $rc= preg_match($pattern, $line, $matches);
@@ -1107,10 +1109,19 @@ function get_unix_ts($line)
 		list($hour,$min,$sec) = explode(':',$ts_time);
 		$dt = $day.'-'.$month.'-'.$year.' '.$ts_time;
                 if (($unix_ts = strtotime($dt)) === false)
-                {
-                        output_message (LOG_ERR,'unable to convert string to timestamp '.$dt.' (timestamp was: '.$ts.')');
+		{
+			output_message (LOG_ERR,'unable to convert string to timestamp '.$dt.' (timestamp was: '.$ts.')');
 			return 'error';
-                }
+		}
+		else
+		{
+			if ($debug) echo 'Found date/time '.$ts.' in logline and converted it to unix timestamp '.$unix_ts.' = '.date('YmdHis',$unix_ts)."\n";
+		}
+	}
+	else
+        {
+		output_message (LOG_ERR,'unable to find time string in logline '.$line);
+		return 'error';
 	}
 	return $unix_ts;
 }
