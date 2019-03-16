@@ -11,7 +11,7 @@
 // For usage instructions see file USAGE.
 // For licensing see file LICENSE.
 // 
-// Copyright 2010-2016 John Fawcett (john at voipsupport.it)
+// Copyright 2010-2019 John Fawcett (john at voipsupport.it)
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -25,13 +25,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
-$version='3.2.0';
+$version='3.2.1';
 $copyright = 'check_auth_log version '.$version."\n".'Copyright 2010-2019 John Fawcett (john at voipsupport.it)'."\n".'Released under GPL v.3. There is no warranty';
 $debug=false;
 
 $opts=getopt('a:c:d:e:vtxyz');
 
 // check_auth_log -v
+// output version
 if (isset($opts['v']))
 {
 	echo $copyright."\n\n";
@@ -39,6 +40,7 @@ if (isset($opts['v']))
 }
 
 // check_auth_log -t
+// activate tracing
 if (isset($opts['t']))
 {
 	echo $copyright."\n";
@@ -944,6 +946,10 @@ function update_user_mysql($conf,$key,$mode)
 			else
 				output_message(LOG_WARNING,'Enabled '.$key.' in mysql database');
 		}
+		else
+        	{
+			output_message(LOG_WARNING,$mode.' query did not change mysql database');
+		}
 	}
 	else
         {
@@ -1064,8 +1070,14 @@ function delete_exim_record($conf,$key)
 function delete_db_record($conf,$cached_vars,$key)
 {
 	if (dba_delete($key,$cached_vars['dbh_dbfile']))
+	{
 		output_message(LOG_WARNING,'Removed '.$key.' from '.$conf['dbfile']);
-	dba_optimize($cached_vars['dbh_dbfile']);;
+		dba_optimize($cached_vars['dbh_dbfile']);;
+	}
+	else
+	{
+		output_message(LOG_INFO,'The entry '.$key.' was not found in '.$conf['dbfile']);
+	}
 }
 // extract all db records
 
