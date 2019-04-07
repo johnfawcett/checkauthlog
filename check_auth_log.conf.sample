@@ -98,7 +98,7 @@ ip_limit = 5
 ;       how many recipients per sasl username are allowed within the
 ;       expire window
 ;	A value of 0 indicates no limit
-ip_limit = 0
+recipient_limit = 0
 
 ;max_auth_records:
 ;       the maximum number of auth session records to store
