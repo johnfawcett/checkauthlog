@@ -75,7 +75,7 @@ as not to list the whitelist.
 	- add check_sender_access to read the access file containing
 	  blocked senders (as written by check_auth_log script)
 	- rest of checks normally done in smtpd_sender_restrictions
-	  on your submission service (e.g. reject unless sender is
+	  on your submission and/or smtps services (e.g. reject unless sender is
 	  logged in as owner of email address)
 
 main.cf:
@@ -83,7 +83,7 @@ smtpd_restriction_classes = submission_sender_checks
 submission_sender_checks = check_sender_access hash:/etc/postfix/smtp_auth_access_whitelist,check_sender_access hash:/etc/postfix/smtp_auth_access,reject_sender_login_mismatch
 
 
-    In master.cf configure the smtp_sender_restrictions fro the submission
+    In master.cf configure the smtp_sender_restrictions for the submission
     service.
 
 master.cf;
@@ -91,6 +91,15 @@ submission inet n      -       n       -       -       smtpd
 ...
         -o smtpd_sender_restrictions=submission_sender_checks
 ... 
+
+    If you provide access over smtps, configure the smtpd_sender_restrictions
+    for the smtps service too, reusing the same smtpd_restriction_class:
+
+smtps     inet  n       -       -       -       -       smtpd
+...
+        -o smtpd_sender_restrictions=submission_sender_checks
+... 
+
 
 (6). reload postfix
 
